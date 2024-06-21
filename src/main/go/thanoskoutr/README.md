@@ -77,3 +77,26 @@ To benchmark properly the solution and print a performance summary, run from the
 ./evaluate.sh thanoskoutr
 ./evaluate_10K.sh thanoskoutr
 ```
+
+# Profiling
+
+## Enable profiling
+Enable CPU and Memory profiling, by editing the calculate script that runs the binary:
+```bash
+go run main.go -cpuprofile -memprofile
+target/thanoskoutr/1brc "$INPUT" -cpuprofile -memprofile
+```
+
+Enable live profiling with HTTP server on port `6060`, by editing the calculate script that runs the binary:
+```bash
+target/thanoskoutr/1brc "$INPUT" -httpprofile
+```
+
+To check the live profiling results, while the program is still running navigate to the following path: `http://localhost:6060/debug/pprof/`
+
+## Analyze results
+To check the produced CPU and Memory profiling results, use the `pprof` tool to open them in a web page on port `6060`:
+```bash
+go tool pprof -http=:6060 -no_browser cpuprofile.prof
+go tool pprof -http=:6060 -no_browser cpuprofile.prof
+```

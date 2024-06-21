@@ -2,10 +2,14 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"log"
 	"math"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
+	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
@@ -213,6 +217,45 @@ func fnv32(key string) uint32 {
 }
 
 func main() {
+	var (
+		cpuprofile  = flag.Bool("cpuprofile", false, "write cpu profile to `file`")
+		memprofile  = flag.Bool("memprofile", false, "write memory profile to `file`")
+		httpprofile = flag.Bool("httpprofile", false, "run HTTP server for runtime profiling")
+	)
+
+	// Start CPU profiling
+	if *cpuprofile {
+		f, err := os.Create("cpuprofile.prof")
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
+
+	// Start memory profiling
+	if *memprofile {
+		fMem, err := os.Create("memprofile.prof")
+		if err != nil {
+			log.Fatal("could not create memory profile: ", err)
+		}
+		defer func() {
+			if err := pprof.WriteHeapProfile(fMem); err != nil {
+				log.Fatal("could not write memory profile: ", err)
+			}
+			fMem.Close()
+		}()
+	}
+
+	// Start live server for profiling on run time
+	if *httpprofile {
+		go func() {
+			log.Println(http.ListenAndServe("localhost:6060", nil))
+		}()
+	}
+
 	// Open file
 	if len(os.Args) < 2 {
 		fmt.Printf("No measurements file input given\n")
