@@ -9,11 +9,17 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // TODO: Delete logs
 // TODO: Delete run time calculations
+
+const (
+	WorkersCount    = 64
+	LinesBufferSize = 1000
+)
 
 type Measurement struct {
 	Location    string
@@ -59,56 +65,80 @@ func processFile(file *os.File) *map[string]*Stats {
 	var countInterval = 1000000
 	measurements := make(map[string]*Stats)
 
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		// Count lines
-		lineCount++
-		if lineCount%countInterval == 0 {
-			log.Printf("Read %d lines so far...\n", lineCount)
-		}
+	// Channel for reading line in parallel
+	mu := &sync.Mutex{}
+	var wg sync.WaitGroup
+	lines := make(chan string, LinesBufferSize)
 
-		// Parse line
-		line := scanner.Text()
-		parts := strings.Split(line, ";")
-		if len(parts) != 2 {
-			fmt.Printf("Skipping invalid line at %d: %s\n", lineCount, line)
-			continue
+	go func() {
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			// Count lines
+			lineCount++
+			if lineCount%countInterval == 0 {
+				log.Printf("Read %d lines so far...\n", lineCount)
+			}
+			// Read line
+			lines <- scanner.Text()
 		}
-		location := parts[0]
-		temperature, err := strconv.ParseFloat(parts[1], 64)
-		if err != nil {
-			fmt.Printf("Skipping invalid temperature at line %d: %s\n", lineCount, parts[1])
-			continue
+		close(lines)
+		if err := scanner.Err(); err != nil {
+			fmt.Printf("Error reading measurements file: %v\n", err)
 		}
+		log.Printf("Count of lines in file: %v\n", lineCount)
+	}()
 
-		// Calculate min, max, mean
-		if _, exists := measurements[location]; !exists {
-			measurements[location] = &Stats{
-				Min:   temperature,
-				Max:   temperature,
-				Mean:  temperature,
-				Sum:   temperature,
-				Count: 1,
+	for i := 0; i < WorkersCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for line := range lines {
+				processLine(line, measurements, mu)
 			}
-		} else {
-			stats := measurements[location]
-			if temperature < stats.Min {
-				stats.Min = temperature
-			}
-			if temperature > stats.Max {
-				stats.Max = temperature
-			}
-			stats.Count++
-			stats.Sum += temperature
-			// Do not have to calculate the Mean here, do it on print
-		}
+		}()
 	}
-	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error reading measurements file: %v\n", err)
-	}
-	log.Printf("Count of lines in file: %v\n", lineCount)
+
+	wg.Wait()
 
 	return &measurements
+}
+
+func processLine(line string, measurements map[string]*Stats, mu *sync.Mutex) {
+	parts := strings.Split(line, ";")
+	if len(parts) != 2 {
+		fmt.Printf("Skipping invalid line: %s\n", line)
+		return
+	}
+	location := parts[0]
+	temperature, err := strconv.ParseFloat(parts[1], 64)
+	if err != nil {
+		fmt.Printf("Skipping invalid temperature: %s\n", parts[1])
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Calculate min, max, mean
+	if stats, exists := measurements[location]; !exists {
+		measurements[location] = &Stats{
+			Min:   temperature,
+			Max:   temperature,
+			Mean:  temperature,
+			Sum:   temperature,
+			Count: 1,
+		}
+	} else {
+		if temperature < stats.Min {
+			stats.Min = temperature
+		}
+		if temperature > stats.Max {
+			stats.Max = temperature
+		}
+		stats.Count++
+		stats.Sum += temperature
+		// Do not have to calculate the Mean here, do it on print
+	}
 }
 
 // rounding floats to 1 decimal place with 0.05 rounding up to 0.1
