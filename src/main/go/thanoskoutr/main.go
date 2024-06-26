@@ -64,46 +64,55 @@ func formatMeasurements(measurements map[string]*Stats) string {
 }
 
 func processFile(file *os.File) []map[string]*Stats {
-	// Read file line-by-line
-	var lineCount = 0
+	// Read file lines into an array
+	var lines []string
+	var lineLogCount = 0
 	var countInterval = 1000000
-	partialMeasurements := make([]map[string]*Stats, WorkersCount)
-
-	// Initialize partial results maps
-	for i := 0; i < WorkersCount; i++ {
-		partialMeasurements[i] = make(map[string]*Stats)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		// Count lines
+		lineLogCount++
+		if lineLogCount%countInterval == 0 {
+			log.Printf("Read %d lines so far...\n", lineLogCount)
+		}
+		lines = append(lines, scanner.Text())
+		// TODO: Very memory consuming. Max lines read: 300_000_000
+	}
+	if err := scanner.Err(); err != nil {
+		log.Fatalf("Error reading measurements file: %v", err)
 	}
 
-	// Channel for reading line in parallel
+	// Calculate the chunk size
+	lineCount := len(lines)
+	log.Printf("Count of lines in file: %v\n", lineCount)
+	// Ensure that workers do not exceed the line count
+	workerCount := min(lineCount, WorkersCount)
+	log.Printf("workerCount: %v\n", workerCount)
+	// Make sure that all lines are evenly distributed among the workers
+	chunkSize := (lineCount + workerCount - 1) / workerCount
+	log.Printf("chunkSize: %v\n", chunkSize)
+
+	// Each worker has a partial measurement
 	var wg sync.WaitGroup
-	lines := make(chan string, LinesBufferSize)
+	partialMeasurements := make([]map[string]*Stats, workerCount)
 
-	go func() {
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			// Count lines
-			lineCount++
-			if lineCount%countInterval == 0 {
-				log.Printf("Read %d lines so far...\n", lineCount)
-			}
-			// Read line
-			lines <- scanner.Text()
-		}
-		close(lines)
-		if err := scanner.Err(); err != nil {
-			fmt.Printf("Error reading measurements file: %v\n", err)
-		}
-		log.Printf("Count of lines in file: %v\n", lineCount)
-	}()
-
-	for i := 0; i < WorkersCount; i++ {
+	// Initialize partial results maps
+	for i := 0; i < workerCount; i++ {
+		partialMeasurements[i] = make(map[string]*Stats)
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			localResults := partialMeasurements[workerID]
-			for line := range lines {
-				processLine(line, localResults)
+			start := workerID * chunkSize
+			// log.Printf("ID=%v: start: %v\n", workerID, start)
+			if start >= lineCount {
+				return
 			}
+			end := start + chunkSize
+			// log.Printf("ID=%v: end: %v\n", workerID, end)
+			if end > lineCount {
+				end = lineCount
+			}
+			processChunk(lines[start:end], partialMeasurements[workerID])
 		}(i)
 	}
 
@@ -112,38 +121,40 @@ func processFile(file *os.File) []map[string]*Stats {
 	return partialMeasurements
 }
 
-func processLine(line string, measurements map[string]*Stats) {
-	parts := strings.Split(line, ";")
-	if len(parts) != 2 {
-		fmt.Printf("Skipping invalid line: %s\n", line)
-		return
-	}
-	location := parts[0]
-	temperature, err := strconv.ParseFloat(parts[1], 64)
-	if err != nil {
-		fmt.Printf("Skipping invalid temperature: %s\n", parts[1])
-		return
-	}
+func processChunk(chunk []string, measurements map[string]*Stats) {
+	for _, line := range chunk {
+		parts := strings.Split(line, ";")
+		if len(parts) != 2 {
+			fmt.Printf("Skipping invalid line: %s\n", line)
+			return
+		}
+		location := parts[0]
+		temperature, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			fmt.Printf("Skipping invalid temperature: %s\n", parts[1])
+			return
+		}
 
-	// Calculate min, max, mean
-	if stats, exists := measurements[location]; !exists {
-		measurements[location] = &Stats{
-			Min:   temperature,
-			Max:   temperature,
-			Mean:  temperature,
-			Sum:   temperature,
-			Count: 1,
+		// Calculate min, max, mean
+		if stats, exists := measurements[location]; !exists {
+			measurements[location] = &Stats{
+				Min:   temperature,
+				Max:   temperature,
+				Mean:  temperature,
+				Sum:   temperature,
+				Count: 1,
+			}
+		} else {
+			if temperature < stats.Min {
+				stats.Min = temperature
+			}
+			if temperature > stats.Max {
+				stats.Max = temperature
+			}
+			stats.Count++
+			stats.Sum += temperature
+			// Do not have to calculate the Mean here, do it on print
 		}
-	} else {
-		if temperature < stats.Min {
-			stats.Min = temperature
-		}
-		if temperature > stats.Max {
-			stats.Max = temperature
-		}
-		stats.Count++
-		stats.Sum += temperature
-		// Do not have to calculate the Mean here, do it on print
 	}
 }
 
