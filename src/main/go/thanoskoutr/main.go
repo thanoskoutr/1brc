@@ -64,56 +64,53 @@ func formatMeasurements(measurements map[string]*Stats) string {
 }
 
 func processFile(file *os.File) []map[string]*Stats {
-	// Read file lines into an array
-	var lines []string
-	var lineLogCount = 0
-	var countInterval = 1000000
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		// Count lines
-		lineLogCount++
-		if lineLogCount%countInterval == 0 {
-			log.Printf("Read %d lines so far...\n", lineLogCount)
-		}
-		lines = append(lines, scanner.Text())
-		// TODO: Very memory consuming. Max lines read: 300_000_000
-	}
-	if err := scanner.Err(); err != nil {
-		log.Fatalf("Error reading measurements file: %v", err)
-	}
-
-	// Calculate the chunk size
-	lineCount := len(lines)
-	log.Printf("Count of lines in file: %v\n", lineCount)
-	// Ensure that workers do not exceed the line count
-	workerCount := min(lineCount, WorkersCount)
-	log.Printf("workerCount: %v\n", workerCount)
-	// Make sure that all lines are evenly distributed among the workers
-	chunkSize := (lineCount + workerCount - 1) / workerCount
-	log.Printf("chunkSize: %v\n", chunkSize)
-
-	// Each worker has a partial measurement
+	// Create workers and channel
+	linesChannel := make(chan []string, WorkersCount)
 	var wg sync.WaitGroup
-	partialMeasurements := make([]map[string]*Stats, workerCount)
+	partialMeasurements := make([]map[string]*Stats, WorkersCount)
 
-	// Initialize partial results maps
-	for i := 0; i < workerCount; i++ {
+	for i := 0; i < WorkersCount; i++ {
 		partialMeasurements[i] = make(map[string]*Stats)
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			start := workerID * chunkSize
-			// log.Printf("ID=%v: start: %v\n", workerID, start)
-			if start >= lineCount {
-				return
+			for chunk := range linesChannel {
+				processChunk(chunk, partialMeasurements[workerID])
 			}
-			end := start + chunkSize
-			// log.Printf("ID=%v: end: %v\n", workerID, end)
-			if end > lineCount {
-				end = lineCount
-			}
-			processChunk(lines[start:end], partialMeasurements[workerID])
 		}(i)
+	}
+
+	// Read file and distribute lines to workers in chunks
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	var countInterval = 1000000
+
+	chunkSize := 1000000 // TODO: Find a reasonable chunk size
+	var chunk []string
+	log.Printf("Chunk Size: %v\n", chunkSize)
+
+	for scanner.Scan() {
+		// Count lines
+		lineCount++
+		if lineCount%countInterval == 0 {
+			log.Printf("Read %d lines so far...\n", lineCount)
+		}
+		chunk = append(chunk, scanner.Text())
+		if len(chunk) >= chunkSize {
+			linesChannel <- chunk
+			chunk = nil
+		}
+	}
+	log.Printf("Count of lines in file: %v\n", lineCount)
+
+	// Empty last remaining chunk
+	if len(chunk) > 0 {
+		linesChannel <- chunk
+	}
+	close(linesChannel)
+
+	if err := scanner.Err(); err != nil {
+		log.Fatalf("Error reading measurements file: %v", err)
 	}
 
 	wg.Wait()
