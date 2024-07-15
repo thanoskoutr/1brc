@@ -216,3 +216,9 @@ All the execution results in details are below:
 ./test.sh thanoskoutr measurements_1B.txt  392,04s user 17,69s system 423% cpu 1:36,66 total
 ./test.sh thanoskoutr measurements_1B.txt  388,85s user 17,89s system 423% cpu 1:36,07 total
 ```
+
+# References
+Some blogs and repos with other Go implementation for the 1brc challenge:
+- [One Billion Rows Challenge in Golang](https://www.bytesizego.com/blog/one-billion-row-challenge-go)
+- [1brc - AlexanderYastrebov](https://github.com/gunnarmorling/1brc/tree/main/src/main/go/AlexanderYastrebov)
+- [1brc - elh](https://github.com/gunnarmorling/1brc/tree/main/src/main/go/elh)
