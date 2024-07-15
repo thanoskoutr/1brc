@@ -9,6 +9,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"sort"
 	"strconv"
@@ -21,8 +22,12 @@ import (
 // TODO: Delete run time calculations
 
 const (
-	WorkersCount    = 16
 	LinesBufferSize = 1000000 // Max: 1000000000 (not any difference), Min: 0 (significantly slower)
+)
+
+var (
+	// Number of workers to parse each input chunk concurrently. Will be set to runtime.NumCPU().
+	WorkersCount = 1
 )
 
 type Measurement struct {
@@ -194,6 +199,11 @@ func main() {
 		memprofile  = flag.Bool("memprofile", false, "write memory profile to `file`")
 		httpprofile = flag.Bool("httpprofile", false, "run HTTP server for runtime profiling")
 	)
+
+	// Get number of logical CPUs usable by the current process
+	cpuNum := runtime.NumCPU()
+	WorkersCount = cpuNum
+	log.Printf("CPU Number: %v\n", cpuNum)
 
 	// Start CPU profiling
 	if *cpuprofile {
