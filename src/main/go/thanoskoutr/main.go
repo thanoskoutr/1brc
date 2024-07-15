@@ -15,11 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
-
-// TODO: Delete logs
-// TODO: Delete run time calculations
 
 var (
 	// Number of workers to parse each input chunk concurrently. Will be set to runtime.NumCPU().
@@ -88,25 +84,25 @@ func processFile(file *os.File) []map[string]*Stats {
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(buf, bufio.MaxScanTokenSize)
 
-	lineCount := 0
-	var countInterval = 1000000
+	// lineCount := 0
+	// var countInterval = 1000000
 
 	var chunk []string
-	log.Printf("Chunk Size: %v\n", ChunkSize)
+	// log.Printf("Chunk Size: %v\n", ChunkSize)
 
 	for scanner.Scan() {
 		// Count lines
-		lineCount++
-		if lineCount%countInterval == 0 {
-			log.Printf("Read %d lines so far...\n", lineCount)
-		}
+		// lineCount++
+		// if lineCount%countInterval == 0 {
+		// log.Printf("Read %d lines so far...\n", lineCount)
+		// }
 		chunk = append(chunk, scanner.Text())
 		if len(chunk) >= ChunkSize {
 			linesChannel <- chunk
 			chunk = nil
 		}
 	}
-	log.Printf("Count of lines in file: %v\n", lineCount)
+	// log.Printf("Count of lines in file: %v\n", lineCount)
 
 	// Empty last remaining chunk
 	if len(chunk) > 0 {
@@ -125,13 +121,13 @@ func processFile(file *os.File) []map[string]*Stats {
 
 func processChunk(chunk []string, measurements map[string]*Stats) {
 	for _, line := range chunk {
-		parts := strings.Split(line, ";")
+		parts := strings.Split(line, ";") // TODO: Speed Improvement: Replace with manual splitting
 		if len(parts) != 2 {
 			fmt.Printf("Skipping invalid line: %s\n", line)
 			return
 		}
 		location := parts[0]
-		temperature, err := strconv.ParseFloat(parts[1], 64)
+		temperature, err := strconv.ParseFloat(parts[1], 64) // TODO: Speed Improvement: Replace with manual parsing
 		if err != nil {
 			fmt.Printf("Skipping invalid temperature: %s\n", parts[1])
 			return
@@ -203,7 +199,7 @@ func main() {
 	// Get number of logical CPUs usable by the current process
 	cpuNum := runtime.NumCPU()
 	WorkersCount = cpuNum
-	log.Printf("CPU Number: %v\n", cpuNum)
+	// log.Printf("CPU Number: %v\n", cpuNum)
 
 	// Start CPU profiling
 	if *cpuprofile {
@@ -251,25 +247,12 @@ func main() {
 	}
 	defer file.Close()
 
-	// Keep execution times
-	var started, finished time.Time
-	var total time.Duration
-
 	// Process file
-	started = time.Now()
 	partialMeasurements := processFile(file)
-	finished = time.Now()
-	total = finished.Sub(started)
-	log.Printf("Total reading and calculation time: %v\n", total)
 
 	// Combine results
-	started = time.Now()
 	measurements := combineMeasurements(partialMeasurements)
 	// Print results
 	results := formatMeasurements(measurements)
-	finished = time.Now()
-	total = finished.Sub(started)
-	log.Printf("Total printing results time: %v\n", total)
-	log.Printf("Calculated measurements for each location:\n")
 	fmt.Println(results)
 }
