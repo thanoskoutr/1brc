@@ -21,13 +21,11 @@ import (
 // TODO: Delete logs
 // TODO: Delete run time calculations
 
-const (
-	LinesBufferSize = 1000000 // Max: 1000000000 (not any difference), Min: 0 (significantly slower)
-)
-
 var (
 	// Number of workers to parse each input chunk concurrently. Will be set to runtime.NumCPU().
 	WorkersCount = 1
+	// Number of chunks of input for each worker to process. The chunk value is the number of input lines.
+	ChunkSize = 1000000
 )
 
 type Measurement struct {
@@ -90,9 +88,8 @@ func processFile(file *os.File) []map[string]*Stats {
 	lineCount := 0
 	var countInterval = 1000000
 
-	chunkSize := 1000000 // TODO: Find a reasonable chunk size
 	var chunk []string
-	log.Printf("Chunk Size: %v\n", chunkSize)
+	log.Printf("Chunk Size: %v\n", ChunkSize)
 
 	for scanner.Scan() {
 		// Count lines
@@ -101,7 +98,7 @@ func processFile(file *os.File) []map[string]*Stats {
 			log.Printf("Read %d lines so far...\n", lineCount)
 		}
 		chunk = append(chunk, scanner.Text())
-		if len(chunk) >= chunkSize {
+		if len(chunk) >= ChunkSize {
 			linesChannel <- chunk
 			chunk = nil
 		}
