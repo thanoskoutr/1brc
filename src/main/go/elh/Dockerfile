@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 
-FROM golang AS builder
+FROM golang:1.21 AS builder
 WORKDIR /app
 COPY . ./
 RUN go build -ldflags "-w -s" -o /1brc-go .

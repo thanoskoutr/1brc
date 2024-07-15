@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 
-FROM golang AS build-stage
+FROM golang:1.21 AS build-stage
 COPY . src/
 RUN cd src && go build .
 
