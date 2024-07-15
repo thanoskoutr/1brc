@@ -84,7 +84,10 @@ func processFile(file *os.File) []map[string]*Stats {
 	}
 
 	// Read file and distribute lines to workers in chunks
+	buf := make([]byte, 0, 64*1024)
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(buf, bufio.MaxScanTokenSize)
+
 	lineCount := 0
 	var countInterval = 1000000
 
